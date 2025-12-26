@@ -1,7 +1,8 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
-import { UPSTREAMS } from './upstream';
+import { ServiceRegistryService } from '../registry/service-registry.service';
+import { STATIC_UPSTREAMS } from './upstream';
 
 function getServiceFromPath(path: string) {
   const match = path.match(/^\/([^/]+)(\/.*)?$/);
@@ -16,7 +17,9 @@ function stripServicePrefix(originalUrl: string) {
 }
 
 @Injectable()
-export class DynamicProxyMiddleware implements NestMiddleware {
+export class ProxyMiddleware implements NestMiddleware {
+  constructor(private readonly registry: ServiceRegistryService) {}
+
   private proxy = createProxyMiddleware({
     changeOrigin: true,
     xfwd: true,
@@ -25,14 +28,20 @@ export class DynamicProxyMiddleware implements NestMiddleware {
     proxyTimeout: 5 * 60 * 1000,
 
     router: (req: Request) => {
-      const fullUrl = (req as any).originalUrl || req.url;
+      const fullUrl = req.originalUrl || req.url;
       const service = getServiceFromPath(fullUrl);
-      const target = service ? UPSTREAMS[service] : undefined;
-      return target ?? 'http://127.0.0.1:9';
+      if (!service) return 'http://127.0.0.1:9';
+
+      // ưu tiên registry (nếu em có register/health/LB)
+      const inst = this.registry.pickHealthy(service);
+      if (inst) return inst.baseUrl;
+
+      // fallback static
+      return STATIC_UPSTREAMS[service] ?? 'http://127.0.0.1:9';
     },
 
     pathRewrite: (_path, req: Request) => {
-      const fullUrl = (req as any).originalUrl || req.url;
+      const fullUrl = req.originalUrl || req.url;
       return stripServicePrefix(fullUrl);
     },
 
@@ -55,7 +64,7 @@ export class DynamicProxyMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction) {
     const fullUrl = req.originalUrl || req.url;
 
-    // health
+    // gateway health
     if (req.method === 'GET' && /^\/health(?:\/|\?|$)/.test(fullUrl)) {
       res.status(200).send('ok');
       return;
@@ -67,8 +76,10 @@ export class DynamicProxyMiddleware implements NestMiddleware {
       return;
     }
 
-    const target = UPSTREAMS[service];
-    if (!target) {
+    // chặn service lạ
+    const hasRegistry = !!this.registry.pickHealthy(service);
+    const hasStatic = !!STATIC_UPSTREAMS[service];
+    if (!hasRegistry && !hasStatic) {
       res.status(404).send('Unknown service');
       return;
     }

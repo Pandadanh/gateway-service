@@ -1,9 +1,8 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { DynamicProxyMiddleware } from './proxy.middleware';
+import { Module } from '@nestjs/common';
+import { RegistryModule } from './registry/registry.module';
+import { ProxyModule } from './proxy/proxy.module';
 
-@Module({})
-export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(DynamicProxyMiddleware).forRoutes('*');
-  }
-}
+@Module({
+  imports: [RegistryModule, ProxyModule],
+})
+export class AppModule {}
