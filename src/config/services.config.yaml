@@ -1,0 +1,14 @@
+# Static Services Configuration (Optional Fallback)
+# Chỉ dùng khi service chưa được register trong service registry
+# Ưu tiên: Service Registry > Static Fallback
+
+# Format: service-name: base-url
+# Ví dụ:
+# core: http://127.0.0.1:8081
+# media: http://127.0.0.1:8082
+# booking: http://127.0.0.1:8081
+
+# Để trống nếu chỉ muốn dùng service registry
+services: {}
+
+

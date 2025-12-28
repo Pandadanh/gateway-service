@@ -1,0 +1,76 @@
+# Routes Configuration
+# Định nghĩa các API public (không cần JWT) và private (cần JWT) cho từng service
+
+services:
+  # Core Service
+  core:
+    public:
+      # Public APIs - không cần JWT
+      - method: GET
+        path: /api/health
+      - method: GET
+        path: /health
+      - method: GET
+        path: /api/auth/login
+      - method: POST
+        path: /api/auth/register
+      - method: GET
+        path: /api/auth/verify-email
+      - method: POST
+        path: /api/auth/forgot-password
+      - method: GET
+        path: /api/public/courts
+      - method: GET
+        path: /api/public/courts/*
+      - method: GET
+        path: /api/public/tournaments
+      - method: GET
+        path: /api/public/tournaments/*
+    private:
+      # Private APIs - cần JWT (mặc định tất cả routes khác)
+      # Có thể để trống hoặc list cụ thể nếu muốn
+
+  # Media Service
+  media:
+    public:
+      - method: GET
+        path: /api/public/images/*
+      - method: GET
+        path: /api/public/files/*
+    private:
+      # Tất cả routes khác cần JWT
+
+  # Booking Service
+  booking:
+    public:
+      - method: GET
+        path: /api/public/availability
+      - method: GET
+        path: /api/public/prices
+    private:
+      # Tất cả routes khác cần JWT
+
+  # Queue Service
+  queue:
+    public:
+      # Queue service thường là internal, không có public API
+    private:
+      # Tất cả routes cần JWT
+
+# Global public routes (không thuộc service nào)
+global:
+  public:
+    - path: /health
+      method: GET
+    - path: /metrics
+      method: GET
+    - path: /metrics/*
+      method: GET
+    - path: /registry
+      method: GET
+    - path: /registry/register
+      method: POST
+    - path: /registry/heartbeat/*
+      method: POST
+
+
