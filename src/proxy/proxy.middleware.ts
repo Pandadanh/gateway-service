@@ -62,6 +62,10 @@ export class ProxyMiddleware implements NestMiddleware {
     proxyTimeout: this.proxyConfig.proxyTimeout,
     followRedirects: true,
     autoRewrite: false,
+    // Preserve request body for POST/PUT/PATCH requests
+    preserveHeaderKeyCase: true,
+    // Handle self-signed certificates
+    secure: false,
 
     router: (req: Request) => {
       const fullUrl = req.originalUrl || req.url;
@@ -95,10 +99,22 @@ export class ProxyMiddleware implements NestMiddleware {
     on: {
       error: (err, _req, res) => {
         const requestId = (_req as Request).headers['x-request-id'];
+        
+        // Don't log/respond if client already disconnected
+        if ((err as any).code === 'ECONNABORTED' || (err as any).code === 'ECONNRESET') {
+          this.logger.debug(`Client aborted request ${requestId}`);
+          return;
+        }
+        
         this.logger.error(
           `Proxy error for request ${requestId}: ${err?.message || err}`,
           err?.stack,
         );
+        
+        // Check if response already sent
+        if ((res as Response).headersSent) {
+          return;
+        }
         
         (res as Response).status(502).json({
           status: 'error',
@@ -120,6 +136,11 @@ export class ProxyMiddleware implements NestMiddleware {
         if (user) {
           proxyReq.setHeader('x-user-id', user.id || user.userId || '');
         }
+        
+        // Handle client disconnect
+        req.on('aborted', () => {
+          proxyReq.destroy();
+        });
       },
       proxyRes: (proxyRes, req) => {
         // Log slow requests

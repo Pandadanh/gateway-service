@@ -5,12 +5,15 @@ import { requestIdMiddleware } from './core/request-id.middleware';
 import { AllExceptionsFilter } from './core/all-exceptions.filter';
 import { HttpLoggerInterceptor } from './core/http-logger.interceptor';
 import { ConfigService } from '@nestjs/config';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   
+  // Disable global body parser - we'll apply it selectively
+  // This prevents body parsing conflicts with http-proxy-middleware
   const app = await NestFactory.create(AppModule, { 
-    bodyParser: true,
+    bodyParser: false,
   });
   const configService = app.get(ConfigService);
   const gatewayConfig = configService.get<import('./config/gateway.config').GatewayConfig>('gatewayConfig');
@@ -25,6 +28,11 @@ async function bootstrap() {
   });
 
   app.use(requestIdMiddleware);
+  
+  // Apply body parsing only to gateway-specific routes (not proxied routes)
+  app.use('/registry', json({ limit: '10mb' }), urlencoded({ extended: true, limit: '10mb' }));
+  app.use('/metrics', json({ limit: '1mb' }), urlencoded({ extended: true, limit: '1mb' }));
+  app.use('/health', json({ limit: '1mb' }), urlencoded({ extended: true, limit: '1mb' }));
   app.useGlobalFilters(new AllExceptionsFilter());
   
   // HttpLoggerInterceptor is now provided via AppModule with ConfigService injection
