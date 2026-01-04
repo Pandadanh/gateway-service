@@ -38,6 +38,8 @@ export class ProxyMiddleware implements NestMiddleware {
   private readonly proxyConfig: GatewayConfig['proxy'];
   private readonly invalidServiceUrl: string;
   private readonly proxy: ReturnType<typeof createProxyMiddleware>;
+  private readonly serviceDiscoveryRetries: number = 2; // Number of retries for service discovery
+  private readonly serviceDiscoveryDelay: number = 500; // Delay between retries in ms
 
   constructor(
     private readonly registry: ServiceRegistryService,
@@ -45,7 +47,8 @@ export class ProxyMiddleware implements NestMiddleware {
     private readonly configService: ConfigService,
   ) {
     this.staticUpstreams = getStaticUpstreams(servicesConfig);
-    const gatewayConfig = this.configService.get<GatewayConfig>('gatewayConfig');
+    const gatewayConfig =
+      this.configService.get<GatewayConfig>('gatewayConfig');
     this.proxyConfig = gatewayConfig?.proxy || {
       timeout: 30000,
       proxyTimeout: 30000,
@@ -53,113 +56,119 @@ export class ProxyMiddleware implements NestMiddleware {
       invalidServiceUrl: 'http://127.0.0.1:9',
     };
     this.invalidServiceUrl = this.proxyConfig.invalidServiceUrl;
-    
+
     this.proxy = createProxyMiddleware({
-    changeOrigin: true,
-    xfwd: true,
-    ws: false,
-    timeout: this.proxyConfig.timeout,
-    proxyTimeout: this.proxyConfig.proxyTimeout,
-    followRedirects: true,
-    autoRewrite: false,
-    // Preserve request body for POST/PUT/PATCH requests
-    preserveHeaderKeyCase: true,
-    // Handle self-signed certificates
-    secure: false,
+      changeOrigin: true,
+      xfwd: true,
+      ws: false,
+      timeout: this.proxyConfig.timeout,
+      proxyTimeout: this.proxyConfig.proxyTimeout,
+      followRedirects: true,
+      autoRewrite: false,
+      // Preserve request body for POST/PUT/PATCH requests
+      preserveHeaderKeyCase: true,
+      // Handle self-signed certificates
+      secure: false,
 
-    router: (req: Request) => {
-      const fullUrl = req.originalUrl || req.url;
-      const service = getServiceFromPath(fullUrl);
-      if (!service) return this.invalidServiceUrl;
+      router: (req: Request) => {
+        const fullUrl = req.originalUrl || req.url;
+        const service = getServiceFromPath(fullUrl);
+        if (!service) return this.invalidServiceUrl;
 
-      // Priority 1: Service Registry (true microservice discovery)
-      const inst = this.registry.pickHealthy(service);
-      if (inst) {
-        return inst.baseUrl;
-      }
-
-      // Priority 2: Static fallback (only if enabled and configured)
-      const staticUrl = this.servicesConfig.getStaticService(service);
-      if (staticUrl) {
-        this.logger.warn(
-          `Service "${service}" not found in registry, using static fallback: ${staticUrl}`,
-        );
-        return staticUrl;
-      }
-
-      // No service found
-      return this.invalidServiceUrl;
-    },
-
-    pathRewrite: (_path, req: Request) => {
-      const fullUrl = req.originalUrl || req.url;
-      return stripServicePrefix(fullUrl);
-    },
-
-    on: {
-      error: (err, _req, res) => {
-        const requestId = (_req as Request).headers['x-request-id'];
-        
-        // Don't log/respond if client already disconnected
-        if ((err as any).code === 'ECONNABORTED' || (err as any).code === 'ECONNRESET') {
-          this.logger.debug(`Client aborted request ${requestId}`);
-          return;
+        // Priority 1: Service Registry (true microservice discovery)
+        const inst = this.registry.pickHealthy(service);
+        if (inst) {
+          return inst.baseUrl;
         }
-        
-        this.logger.error(
-          `Proxy error for request ${requestId}: ${err?.message || err}`,
-          err?.stack,
-        );
-        
-        // Check if response already sent
-        if ((res as Response).headersSent) {
-          return;
+
+        // Priority 2: Static fallback (only if enabled and configured)
+        const staticUrl = this.servicesConfig.getStaticService(service);
+        if (staticUrl) {
+          this.logger.warn(
+            `Service "${service}" not found in registry, using static fallback: ${staticUrl}`,
+          );
+          return staticUrl;
         }
-        
-        (res as Response).status(502).json({
-          status: 'error',
-          message: 'Bad Gateway',
-          detail: String((err as any)?.message ?? err),
-          requestId,
-          timestamp: new Date().toISOString(),
-        });
+
+        // No service found
+        return this.invalidServiceUrl;
       },
-      proxyReq: (proxyReq, req) => {
-        proxyReq.setHeader('x-gateway', 'nestjs-gateway');
-        proxyReq.setHeader('x-forwarded-for', req.ip || req.connection.remoteAddress || '');
-        
-        const rid = req.headers['x-request-id'];
-        if (rid) proxyReq.setHeader('x-request-id', String(rid));
-        
-        // Forward user info if authenticated
-        const user = (req as any).user;
-        if (user) {
-          proxyReq.setHeader('x-user-id', user.id || user.userId || '');
-        }
-        
-        // Handle client disconnect
-        req.on('aborted', () => {
-          proxyReq.destroy();
-        });
+
+      pathRewrite: (_path, req: Request) => {
+        const fullUrl = req.originalUrl || req.url;
+        return stripServicePrefix(fullUrl);
       },
-      proxyRes: (proxyRes, req) => {
-        // Log slow requests
-        const startTime = (req as any)._startTime;
-        if (startTime) {
-          const duration = Date.now() - startTime;
-          if (duration > this.proxyConfig.slowRequestThreshold) {
-            const requestId = (req as Request).headers['x-request-id'];
-            this.logger.warn(
-              `Slow request detected: ${req.method} ${req.url} took ${duration}ms (requestId: ${requestId})`,
-            );
+
+      on: {
+        error: (err, _req, res) => {
+          const requestId = (_req as Request).headers['x-request-id'];
+
+          // Don't log/respond if client already disconnected
+          if (
+            (err as any).code === 'ECONNABORTED' ||
+            (err as any).code === 'ECONNRESET'
+          ) {
+            this.logger.debug(`Client aborted request ${requestId}`);
+            return;
           }
-        }
+
+          this.logger.error(
+            `Proxy error for request ${requestId}: ${err?.message || err}`,
+            err?.stack,
+          );
+
+          // Check if response already sent
+          if ((res as Response).headersSent) {
+            return;
+          }
+
+          (res as Response).status(502).json({
+            status: 'error',
+            message: 'Bad Gateway',
+            detail: String((err as any)?.message ?? err),
+            requestId,
+            timestamp: new Date().toISOString(),
+          });
+        },
+        proxyReq: (proxyReq, req) => {
+          proxyReq.setHeader('x-gateway', 'nestjs-gateway');
+          proxyReq.setHeader(
+            'x-forwarded-for',
+            req.ip || req.connection.remoteAddress || '',
+          );
+
+          const rid = req.headers['x-request-id'];
+          if (rid) proxyReq.setHeader('x-request-id', String(rid));
+
+          // Forward user info if authenticated
+          const user = (req as any).user;
+          if (user) {
+            proxyReq.setHeader('x-user-id', user.id || user.userId || '');
+          }
+
+          // Handle client disconnect
+          req.on('aborted', () => {
+            proxyReq.destroy();
+          });
+        },
+        proxyRes: (proxyRes, req) => {
+          // Log slow requests
+          const startTime = (req as any)._startTime;
+          if (startTime) {
+            const duration = Date.now() - startTime;
+            if (duration > this.proxyConfig.slowRequestThreshold) {
+              const requestId = (req as Request).headers['x-request-id'];
+              this.logger.warn(
+                `Slow request detected: ${req.method} ${req.url} took ${duration}ms (requestId: ${requestId})`,
+              );
+            }
+          }
+        },
       },
-    },
-  });
+    });
   }
 
-  use(req: Request, res: Response, next: NextFunction) {
+  async use(req: Request, res: Response, next: NextFunction) {
     const fullUrl = req.originalUrl || req.url;
     (req as any)._startTime = Date.now();
 
@@ -187,27 +196,63 @@ export class ProxyMiddleware implements NestMiddleware {
       return;
     }
 
-    // Check if service is available (registry or static fallback)
-    const healthyInstance = this.registry.pickHealthy(service);
-    const hasRegistry = !!healthyInstance;
-    const hasStatic = this.servicesConfig.hasStaticFallback(service);
-    
-    if (!hasRegistry && !hasStatic) {
+    // Try to discover service with retries (handles race condition on startup)
+    const isServiceAvailable = await this.checkServiceAvailability(service);
+
+    if (!isServiceAvailable) {
       const registeredServices = this.registry.list().map((i) => i.service);
       const staticServices = Object.keys(this.staticUpstreams);
-      const availableServices = [...new Set([...registeredServices, ...staticServices])];
+      const availableServices = [
+        ...new Set([...registeredServices, ...staticServices]),
+      ];
 
-      res.status(404).json({
+      res.status(503).json({
         status: 'error',
-        message: 'Service not found or not healthy',
+        message: 'Service unavailable',
         service,
         hint: 'Service must be registered via /registry/register or configured as static fallback',
-        availableServices: availableServices.length > 0 ? availableServices : 'none',
+        availableServices:
+          availableServices.length > 0 ? availableServices : 'none',
         timestamp: new Date().toISOString(),
       });
       return;
     }
 
     return this.proxy(req, res, next);
+  }
+
+  /**
+   * Check if a service is available with retry logic to handle startup race conditions
+   */
+  private async checkServiceAvailability(service: string): Promise<boolean> {
+    // Quick check first
+    const healthyInstance = this.registry.pickHealthy(service);
+    const hasStatic = this.servicesConfig.hasStaticFallback(service);
+
+    if (healthyInstance || hasStatic) {
+      return true;
+    }
+
+    // If not found, retry with delays (handles services that are still registering)
+    for (let attempt = 1; attempt <= this.serviceDiscoveryRetries; attempt++) {
+      this.logger.debug(
+        `Service "${service}" not found, retry ${attempt}/${this.serviceDiscoveryRetries}...`,
+      );
+
+      // Wait before retry
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.serviceDiscoveryDelay * attempt),
+      );
+
+      const retryInstance = this.registry.pickHealthy(service);
+      const retryStatic = this.servicesConfig.hasStaticFallback(service);
+
+      if (retryInstance || retryStatic) {
+        this.logger.log(`Service "${service}" discovered on retry ${attempt}`);
+        return true;
+      }
+    }
+
+    return false;
   }
 }
