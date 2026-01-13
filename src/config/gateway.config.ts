@@ -59,11 +59,11 @@ export const gatewayConfig = (): GatewayConfig => ({
   },
   registry: {
     healthCheckInterval: parseInt(
-      process.env.REGISTRY_HEALTH_CHECK_INTERVAL || '10000',
+      process.env.REGISTRY_HEALTH_CHECK_INTERVAL || '5000',
       10,
     ),
     instanceTtl: parseInt(process.env.REGISTRY_INSTANCE_TTL || '30000', 10),
-    healthCheckTimeout: parseInt(process.env.REGISTRY_HEALTH_CHECK_TIMEOUT_MS || '5000', 10),
+    healthCheckTimeout: parseInt(process.env.REGISTRY_HEALTH_CHECK_TIMEOUT_MS || '3000', 10),
     healthCheckEndpoint: process.env.REGISTRY_HEALTH_CHECK_ENDPOINT || '/health',
   },
   logging: {

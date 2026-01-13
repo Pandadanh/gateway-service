@@ -6,8 +6,9 @@ export class ServiceRegistryService {
   private readonly logger = new Logger(ServiceRegistryService.name);
   private readonly instances = new Map<string, ServiceInstance>(); // key = `${service}:${instanceId}`
   private readonly rrCursor = new Map<string, number>(); // round-robin per service
+  private readonly warmupPeriod = 2000; // 2s grace period for new services
 
-  register(input: {
+  async register(input: {
     service: string;
     baseUrl: string;
     instanceId: string;
@@ -20,9 +21,47 @@ export class ServiceRegistryService {
     const key = this.keyOf(input.service, input.instanceId);
     const existing = this.instances.get(key);
     
+    // Perform initial health check with retries before marking as healthy
+    let initialStatus: 'healthy' | 'unhealthy' = 'unhealthy';
+    const maxRetries = 3;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        
+        const healthUrl = `${input.baseUrl}/health`;
+        const response = await fetch(healthUrl, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeout);
+        
+        if (response.ok) {
+          initialStatus = 'healthy';
+          this.logger.log(`✅ Initial health check passed for ${input.service} (${input.instanceId}) on attempt ${attempt}/${maxRetries}`);
+          break; // Success - exit retry loop
+        } else {
+          this.logger.warn(`⚠️ Initial health check failed for ${input.service} (${input.instanceId}) attempt ${attempt}/${maxRetries}: HTTP ${response.status}`);
+        }
+      } catch (error) {
+        this.logger.warn(`⚠️ Initial health check failed for ${input.service} (${input.instanceId}) attempt ${attempt}/${maxRetries}: ${error.message}`);
+      }
+      
+      // Wait before retry (exponential backoff: 200ms, 400ms, 800ms)
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 200 * Math.pow(2, attempt - 1)));
+      }
+    }
+    
+    if (initialStatus === 'unhealthy') {
+      this.logger.warn(`❌ Service ${input.service} (${input.instanceId}) failed all ${maxRetries} initial health checks - registering as unhealthy`);
+    }
+    
     const inst: ServiceInstance = {
       ...input,
-      status: 'healthy',
+      status: initialStatus,
       lastSeenAt: Date.now(),
     };
     this.instances.set(key, inst);
@@ -30,7 +69,7 @@ export class ServiceRegistryService {
     if (existing) {
       this.logger.log(`🔄 Service re-registered: ${input.service} (${input.instanceId})`);
     } else {
-      this.logger.log(`✨ New service registered: ${input.service} (${input.instanceId}) at ${input.baseUrl}`);
+      this.logger.log(`✨ New service registered: ${input.service} (${input.instanceId}) at ${input.baseUrl} - Status: ${initialStatus}`);
     }
     
     return inst;

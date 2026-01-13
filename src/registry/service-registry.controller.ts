@@ -17,7 +17,7 @@ export class ServiceRegistryController {
   constructor(private readonly registry: ServiceRegistryService) {}
 
   @Post('register')
-  register(
+  async register(
     @Body()
     body: {
       service: string;
@@ -33,7 +33,7 @@ export class ServiceRegistryController {
       throw new Error('Invalid request body: service, baseUrl, and instanceId are required');
     }
 
-    const result = this.registry.register(body);
+    const result = await this.registry.register(body);
     this.logger.log(
       `✅ Service registered successfully: ${body.service} (${body.instanceId}) at ${body.baseUrl}`,
     );

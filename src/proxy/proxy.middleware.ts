@@ -38,8 +38,8 @@ export class ProxyMiddleware implements NestMiddleware {
   private readonly proxyConfig: GatewayConfig['proxy'];
   private readonly invalidServiceUrl: string;
   private readonly proxy: ReturnType<typeof createProxyMiddleware>;
-  private readonly serviceDiscoveryRetries: number = 2; // Number of retries for service discovery
-  private readonly serviceDiscoveryDelay: number = 500; // Delay between retries in ms
+  private readonly serviceDiscoveryRetries: number = 4;
+  private readonly serviceDiscoveryDelayMs: number = 400;
 
   constructor(
     private readonly registry: ServiceRegistryService,
@@ -233,26 +233,57 @@ export class ProxyMiddleware implements NestMiddleware {
       return true;
     }
 
-    // If not found, retry with delays (handles services that are still registering)
+    // Check if service exists but is unhealthy (might be warming up)
+    const allInstances = this.registry.list(service);
+    const unhealthyInstances = allInstances.filter(i => i.status === 'unhealthy');
+    
+    if (unhealthyInstances.length > 0) {
+      this.logger.debug(
+        `Service "${service}" has ${unhealthyInstances.length} unhealthy instances, attempting immediate health check...`,
+      );
+      
+      // Try to immediately verify if any unhealthy instance is actually healthy now
+      for (const inst of unhealthyInstances) {
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 2000);
+          const healthUrl = `${inst.baseUrl}/health`;
+          const response = await fetch(healthUrl, { signal: controller.signal });
+          clearTimeout(timeout);
+          
+          if (response.ok) {
+            this.logger.log(`✅ Unhealthy instance recovered: ${service} (${inst.instanceId})`);
+            this.registry.heartbeat(service, inst.instanceId);
+            return true; // Service is now available
+          }
+        } catch {
+          // Still unhealthy, continue to retry loop
+        }
+      }
+    }
+
+    // If not found or unhealthy, retry with exponential backoff
     for (let attempt = 1; attempt <= this.serviceDiscoveryRetries; attempt++) {
       this.logger.debug(
-        `Service "${service}" not found, retry ${attempt}/${this.serviceDiscoveryRetries}...`,
+        `Service "${service}" not ready, retry ${attempt}/${this.serviceDiscoveryRetries}...`,
       );
 
-      // Wait before retry
-      await new Promise((resolve) =>
-        setTimeout(resolve, this.serviceDiscoveryDelay * attempt),
-      );
+      // Exponential backoff: 400ms, 800ms, 1600ms, 3200ms
+      const delay = this.serviceDiscoveryDelayMs * Math.pow(2, attempt - 1);
+      await new Promise((resolve) => setTimeout(resolve, delay));
 
       const retryInstance = this.registry.pickHealthy(service);
       const retryStatic = this.servicesConfig.hasStaticFallback(service);
 
       if (retryInstance || retryStatic) {
-        this.logger.log(`Service "${service}" discovered on retry ${attempt}`);
+        this.logger.log(`✅ Service "${service}" became available on retry ${attempt}`);
         return true;
       }
     }
 
+    this.logger.warn(
+      `❌ Service "${service}" still unavailable after ${this.serviceDiscoveryRetries} retries`,
+    );
     return false;
   }
 }
