@@ -2,7 +2,7 @@
 # Định nghĩa các API public (không cần JWT) và private (cần JWT) cho từng service
 
 services:
-  # Core Service
+  # Core Service (badminton-booking-BE)
   core:
     public:
       # Public APIs - không cần JWT
@@ -30,15 +30,23 @@ services:
       # Private APIs - cần JWT (mặc định tất cả routes khác)
       # Có thể để trống hoặc list cụ thể nếu muốn
 
-  # Media Service
+  # Media Service (media-gateway) - includes realtime WebSocket
   media:
     public:
       - method: GET
         path: /api/public/images/*
       - method: GET
         path: /api/public/files/*
+      - method: GET
+        path: /health
+      - method: GET
+        path: /api/health
     private:
       # Tất cả routes khác cần JWT
+    websocket:
+      # WebSocket endpoint cho realtime chat/notifications
+      enabled: true
+      path: /socket.io
 
   # Booking Service
   booking:
@@ -50,7 +58,17 @@ services:
     private:
       # Tất cả routes khác cần JWT
 
-  # Queue Service
+  # Workflow Service (notifications, queue, scheduler)
+  workflow:
+    public:
+      - method: GET
+        path: /health
+      - method: GET
+        path: /api/health
+    private:
+      # Tất cả routes khác cần JWT
+
+  # Queue Service (deprecated - merged into workflow)
   queue:
     public:
       # Queue service thường là internal, không có public API

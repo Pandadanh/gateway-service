@@ -4,11 +4,16 @@ import { ConfigModule } from '@nestjs/config';
 import { ServiceRegistryService } from './service-registry.service';
 import { ServiceRegistryController } from './service-registry.controller';
 import { RegistryHealthJob } from './registry-health.job';
+import { RedisRegistryService } from './redis-registry.service';
 
 @Module({
   imports: [ScheduleModule.forRoot(), ConfigModule],
-  providers: [ServiceRegistryService, RegistryHealthJob],
+  providers: [
+    ServiceRegistryService,
+    RedisRegistryService,
+    RegistryHealthJob,
+  ],
   controllers: [ServiceRegistryController],
-  exports: [ServiceRegistryService],
+  exports: [ServiceRegistryService, RedisRegistryService],
 })
 export class RegistryModule {}
