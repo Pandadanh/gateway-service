@@ -27,6 +27,6 @@
       "@smashclub/common/*": ["../smashclub-common/packages/@smashclub/common/src/*"]
     }
   },
-  "include": ["src/**/*", "../smashclub-common/packages/@smashclub/common/src/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
