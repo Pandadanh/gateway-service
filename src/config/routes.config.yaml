@@ -9,8 +9,6 @@ services:
       - method: GET
         path: /api/health
       - method: GET
-        path: /health
-      - method: GET
         path: /api/auth/login
       - method: POST
         path: /api/auth/register
@@ -38,8 +36,6 @@ services:
       - method: GET
         path: /api/public/files/*
       - method: GET
-        path: /health
-      - method: GET
         path: /api/health
     private:
       # Tất cả routes khác cần JWT
@@ -61,8 +57,6 @@ services:
   # Workflow Service (notifications, queue, scheduler)
   workflow:
     public:
-      - method: GET
-        path: /health
       - method: GET
         path: /api/health
     private:
