@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Logger,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -45,7 +46,15 @@ export class ServiceRegistryController {
     @Param('service') service: string,
     @Param('instanceId') instanceId: string,
   ) {
-    return this.registry.heartbeat(service, instanceId);
+    const result = this.registry.heartbeat(service, instanceId);
+    
+    // Return 404 if service not found - signals to client to re-register
+    if (!result) {
+      this.logger.warn(`⚠️ Heartbeat for unknown service: ${service}/${instanceId} - returning 404`);
+      throw new NotFoundException(`Service ${service}/${instanceId} not found. Please re-register.`);
+    }
+    
+    return result;
   }
 
   @Delete(':service/:instanceId')

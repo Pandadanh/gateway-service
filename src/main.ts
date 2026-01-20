@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { requestIdMiddleware } from './core/request-id.middleware';
 import { AllExceptionsFilter } from './core/all-exceptions.filter';
 import { HttpLoggerInterceptor } from './core/http-logger.interceptor';
+import { WebSocketProxyService } from './proxy/websocket-proxy.service';
 import { ConfigService } from '@nestjs/config';
 import { json, urlencoded } from 'express';
 
@@ -44,7 +45,15 @@ async function bootstrap() {
     app.useGlobalInterceptors(new HttpLoggerInterceptor());
   }
 
+  // Start server first
   await app.listen(port, bindAddress);
+  
+  // Attach WebSocket proxy to HTTP server
+  const wsProxyService = app.get(WebSocketProxyService);
+  const httpServer = app.getHttpServer();
+  wsProxyService.attachToServer(httpServer);
+  
   logger.log(`🚀 Gateway Service is running on: http://${bindAddress}:${port}`);
+  logger.log(`🔌 WebSocket proxy enabled for /workflow/socket.io`);
 }
 bootstrap();
