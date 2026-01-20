@@ -19,7 +19,7 @@ export class RegistryHealthJob {
     this.healthCheckInterval = config?.registry.healthCheckInterval || 10_000;
     this.instanceTtl = config?.registry.instanceTtl || 30_000;
     this.healthCheckTimeout = config?.registry.healthCheckTimeout || 5000;
-    this.healthCheckEndpoint = config?.registry.healthCheckEndpoint || '/health';
+    this.healthCheckEndpoint = config?.registry.healthCheckEndpoint || '/api/health';
   }
 
   @Interval(10_000) // Will be overridden by config
