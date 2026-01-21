@@ -159,6 +159,12 @@ export class ProxyMiddleware implements NestMiddleware {
           const rid = req.headers['x-request-id'];
           if (rid) proxyReq.setHeader('x-request-id', String(rid));
 
+          // Forward Authorization header to backend (for backend to validate JWT)
+          const authHeader = req.headers['authorization'];
+          if (authHeader) {
+            proxyReq.setHeader('authorization', authHeader);
+          }
+
           // Forward user info if authenticated (for backend trust)
           const user = (req as any).user;
           if (user) {
