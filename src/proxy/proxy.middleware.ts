@@ -163,9 +163,6 @@ export class ProxyMiddleware implements NestMiddleware {
           const authHeader = req.headers['authorization'];
           if (authHeader) {
             proxyReq.setHeader('authorization', authHeader);
-            this.logger.debug(`[ProxyReq] Forwarding Authorization header: Bearer ***`);
-          } else {
-            this.logger.debug(`[ProxyReq] No Authorization header in request`);
           }
 
           // Forward user info if authenticated (for backend trust)
