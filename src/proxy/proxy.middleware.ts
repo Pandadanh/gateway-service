@@ -210,6 +210,20 @@ export class ProxyMiddleware implements NestMiddleware {
     return this.circuitBreaker.getAllStats();
   }
 
+  /**
+   * Reset circuit breaker for a specific service
+   */
+  resetCircuit(serviceName: string): boolean {
+    return this.circuitBreaker.resetCircuit(serviceName);
+  }
+
+  /**
+   * Reset all circuit breakers
+   */
+  resetAllCircuits(): number {
+    return this.circuitBreaker.resetAllCircuits();
+  }
+
   async use(req: Request, res: Response, next: NextFunction) {
     const fullUrl = req.originalUrl || req.url;
     (req as any)._startTime = Date.now();

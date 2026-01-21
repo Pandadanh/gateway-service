@@ -215,5 +215,29 @@ export class CircuitBreakerManager {
     }
     return stats;
   }
+
+  /**
+   * Reset circuit breaker for a specific service
+   */
+  resetCircuit(serviceName: string): boolean {
+    const circuit = this.circuits.get(serviceName);
+    if (circuit) {
+      circuit.reset();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Reset all circuit breakers
+   */
+  resetAllCircuits(): number {
+    let count = 0;
+    for (const circuit of this.circuits.values()) {
+      circuit.reset();
+      count++;
+    }
+    return count;
+  }
 }
 
