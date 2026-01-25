@@ -16,6 +16,8 @@ services:
         path: /api/auth/verify-email
       - method: POST
         path: /api/auth/forgot-password
+      - method: POST
+        path: /api/auth/social-login
       - method: GET
         path: /api/public/courts
       - method: GET
@@ -37,6 +39,8 @@ services:
         path: /api/public/files/*
       - method: GET
         path: /api/health
+      - method: GET
+        path: /api/realtime/rooms/*/messages
     private:
       # Tất cả routes khác cần JWT
     websocket:

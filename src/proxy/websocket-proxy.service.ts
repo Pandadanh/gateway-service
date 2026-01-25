@@ -44,10 +44,18 @@ export class WebSocketProxyService implements OnModuleInit {
     });
 
     this.wsProxy.on('proxyReqWs', (proxyReq, req) => {
-      this.logger.debug(`WS proxy request to ${proxyReq.path}`);
+      // Forward auth headers that were set during handleUpgrade
+      const incomingReq = req as IncomingMessage;
+      if (incomingReq.headers['x-user-id']) {
+        proxyReq.setHeader('x-user-id', incomingReq.headers['x-user-id'] as string);
+      }
+      if (incomingReq.headers['x-user-email']) {
+        proxyReq.setHeader('x-user-email', incomingReq.headers['x-user-email'] as string);
+      }
+      if (incomingReq.headers['x-user-roles']) {
+        proxyReq.setHeader('x-user-roles', incomingReq.headers['x-user-roles'] as string);
+      }
     });
-
-    this.logger.log('WebSocket proxy initialized');
   }
 
   /**
@@ -59,8 +67,6 @@ export class WebSocketProxyService implements OnModuleInit {
     server.on('upgrade', (req: IncomingMessage, socket: Socket, head: Buffer) => {
       this.handleUpgrade(req, socket, head);
     });
-    
-    this.logger.log('WebSocket upgrade handler attached to HTTP server');
   }
 
   /**
@@ -78,7 +84,6 @@ export class WebSocketProxyService implements OnModuleInit {
     }
 
     const serviceName = match[1];
-    this.logger.debug(`WebSocket upgrade for service: ${serviceName}, path: ${url}`);
 
     // Authenticate WebSocket connection (optional - via query param)
     const authResult = await this.authenticateWebSocket(req);
@@ -99,11 +104,8 @@ export class WebSocketProxyService implements OnModuleInit {
     }
 
     // Rewrite path to strip service prefix
-    const originalUrl = req.url;
     const idx = url.indexOf('/', 1);
     req.url = idx === -1 ? '/socket.io/' : url.slice(idx);
-
-    this.logger.log(`Proxying WebSocket: ${serviceName} -> ${target}${req.url}`);
 
     // Proxy the WebSocket
     this.wsProxy.ws(req, socket, head, { target }, (err) => {
@@ -123,21 +125,34 @@ export class WebSocketProxyService implements OnModuleInit {
     roles?: string[];
   } | null> {
     try {
-      const url = new URL(req.url || '', `http://${req.headers.host}`);
-      const token = url.searchParams.get('token');
+      const rawUrl = req.url || '';
       
-      if (!token) {
-        return null;
+      // Parse token from query string (socket.io format: /media/socket.io/?token=xxx&EIO=4...)
+      let token: string | null = null;
+      
+      try {
+        const url = new URL(rawUrl, `http://${req.headers.host}`);
+        token = url.searchParams.get('token');
+      } catch {
+        // Fallback: manual query string parsing
+        const queryStart = rawUrl.indexOf('?');
+        if (queryStart !== -1) {
+          const queryString = rawUrl.substring(queryStart + 1);
+          const params = new URLSearchParams(queryString);
+          token = params.get('token');
+        }
       }
-
+      
+      if (!token) return null;
+      
       const payload = this.jwtService.verify(token, { secret: this.jwtSecret });
+      
       return {
         userId: payload.sub || payload.id || payload.userId,
         email: payload.email,
         roles: payload.roles,
       };
-    } catch (error) {
-      this.logger.debug(`WebSocket auth failed: ${(error as Error).message}`);
+    } catch {
       return null;
     }
   }
