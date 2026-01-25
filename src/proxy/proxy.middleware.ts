@@ -48,6 +48,7 @@ export class ProxyMiddleware implements NestMiddleware {
   private readonly serviceDiscoveryRetries: number = 2;
   private readonly serviceDiscoveryDelay: number = 500;
   private readonly circuitBreaker: CircuitBreakerManager;
+  private readonly circuitBreakerEnabled: boolean;
 
   constructor(
     private readonly registry: ServiceRegistryService,
@@ -66,13 +67,18 @@ export class ProxyMiddleware implements NestMiddleware {
     };
     this.invalidServiceUrl = this.proxyConfig.invalidServiceUrl;
 
-    // Initialize Circuit Breaker
+    // Initialize Circuit Breaker (can be disabled via env CIRCUIT_BREAKER_ENABLED=false)
+    this.circuitBreakerEnabled = this.configService.get<string>('CIRCUIT_BREAKER_ENABLED') !== 'false';
     this.circuitBreaker = new CircuitBreakerManager({
       failureThreshold: 5,
       successThreshold: 3,
       timeout: this.proxyConfig.uploadTimeout || 1800000, // Use upload timeout for circuit breaker
       failureWindow: 60000,
     });
+    
+    if (!this.circuitBreakerEnabled) {
+      this.logger.warn('Circuit breaker is DISABLED');
+    }
 
     // Use extended timeout for all requests (30 minutes) to support large video uploads
     // Normal API requests will still complete quickly, but uploads won't timeout
@@ -97,8 +103,8 @@ export class ProxyMiddleware implements NestMiddleware {
         const service = getServiceFromPath(fullUrl);
         if (!service) return this.invalidServiceUrl;
 
-        // Check circuit breaker
-        if (!this.circuitBreaker.canRequest(service)) {
+        // Check circuit breaker (if enabled)
+        if (this.circuitBreakerEnabled && !this.circuitBreaker.canRequest(service)) {
           this.logger.warn(`Circuit OPEN for ${service} - rejecting`);
           return this.invalidServiceUrl;
         }
@@ -133,8 +139,8 @@ export class ProxyMiddleware implements NestMiddleware {
           const fullUrl = req.originalUrl || req.url;
           const service = getServiceFromPath(fullUrl);
 
-          // Record failure in circuit breaker
-          if (service) {
+          // Record failure in circuit breaker (if enabled)
+          if (this.circuitBreakerEnabled && service) {
             this.circuitBreaker.onFailure(service);
           }
 
@@ -205,8 +211,8 @@ export class ProxyMiddleware implements NestMiddleware {
           const fullUrl = (req as Request).originalUrl || req.url;
           const service = getServiceFromPath(fullUrl || '');
 
-          // Record result in circuit breaker
-          if (service) {
+          // Record result in circuit breaker (if enabled)
+          if (this.circuitBreakerEnabled && service) {
             if (proxyRes.statusCode && proxyRes.statusCode < 500) {
               this.circuitBreaker.onSuccess(service);
             } else if (proxyRes.statusCode && proxyRes.statusCode >= 500) {
@@ -289,21 +295,23 @@ export class ProxyMiddleware implements NestMiddleware {
       return;
     }
 
-    // Check circuit breaker first
-    const circuit = this.circuitBreaker.getCircuit(service);
-    if (circuit.getState() === CircuitState.OPEN) {
-      const stats = circuit.getStats();
-      res.status(503).json({
-        status: 'error',
-        message: 'Service temporarily unavailable',
-        service,
-        reason: 'Circuit breaker is open - too many failures',
-        retryAfter: stats.nextAttemptTime 
-          ? Math.ceil((stats.nextAttemptTime - Date.now()) / 1000) 
-          : 30,
-        timestamp: new Date().toISOString(),
-      });
-      return;
+    // Check circuit breaker first (if enabled)
+    if (this.circuitBreakerEnabled) {
+      const circuit = this.circuitBreaker.getCircuit(service);
+      if (circuit.getState() === CircuitState.OPEN) {
+        const stats = circuit.getStats();
+        res.status(503).json({
+          status: 'error',
+          message: 'Service temporarily unavailable',
+          service,
+          reason: 'Circuit breaker is open - too many failures',
+          retryAfter: stats.nextAttemptTime 
+            ? Math.ceil((stats.nextAttemptTime - Date.now()) / 1000) 
+            : 30,
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
     }
 
     // Try to discover service with retries
