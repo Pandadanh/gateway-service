@@ -19,6 +19,7 @@ export interface GatewayConfig {
     proxyTimeout: number; // Proxy timeout in ms
     slowRequestThreshold: number; // Log requests slower than this (ms)
     invalidServiceUrl: string; // URL to return when service not found
+    uploadTimeout?: number; // Extended timeout for upload routes (ms)
   };
   registry: {
     healthCheckInterval: number;
@@ -52,10 +53,11 @@ export const gatewayConfig = (): GatewayConfig => ({
     cleanupProbability: parseFloat(process.env.RATE_LIMIT_CLEANUP_PROBABILITY || '0.01'),
   },
   proxy: {
-    timeout: parseInt(process.env.PROXY_TIMEOUT_MS || '30000', 10),
-    proxyTimeout: parseInt(process.env.PROXY_TIMEOUT_MS || '30000', 10),
+    timeout: parseInt(process.env.PROXY_TIMEOUT_MS || '1800000', 10), // 30 minutes default for large uploads
+    proxyTimeout: parseInt(process.env.PROXY_TIMEOUT_MS || '1800000', 10), // 30 minutes default
     slowRequestThreshold: parseInt(process.env.PROXY_SLOW_REQUEST_THRESHOLD_MS || '5000', 10),
     invalidServiceUrl: process.env.PROXY_INVALID_SERVICE_URL || 'http://127.0.0.1:9',
+    uploadTimeout: parseInt(process.env.PROXY_UPLOAD_TIMEOUT_MS || '1800000', 10), // 30 minutes for uploads
   },
   registry: {
     healthCheckInterval: parseInt(

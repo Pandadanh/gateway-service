@@ -8,6 +8,12 @@ import { GatewayConfig } from '../config/gateway.config';
 import { getStaticUpstreams } from './upstream';
 import { CircuitBreakerManager, CircuitState } from '../core/circuit-breaker';
 
+// Set maxBodyLength for follow-redirects (used by http-proxy)
+// This must be set before any imports that use follow-redirects
+if (!process.env.FOLLOW_REDIRECTS_MAX_BODY_LENGTH) {
+  process.env.FOLLOW_REDIRECTS_MAX_BODY_LENGTH = (2 * 1024 * 1024 * 1024).toString(); // 2GB
+}
+
 /**
  * Extract service name from path
  * Supports formats:
@@ -52,10 +58,11 @@ export class ProxyMiddleware implements NestMiddleware {
     const gatewayConfig =
       this.configService.get<GatewayConfig>('gatewayConfig');
     this.proxyConfig = gatewayConfig?.proxy || {
-      timeout: 30000,
-      proxyTimeout: 30000,
+      timeout: 1800000, // 30 minutes default
+      proxyTimeout: 1800000,
       slowRequestThreshold: 5000,
       invalidServiceUrl: 'http://127.0.0.1:9',
+      uploadTimeout: 1800000, // 30 minutes for uploads
     };
     this.invalidServiceUrl = this.proxyConfig.invalidServiceUrl;
 
@@ -63,17 +70,24 @@ export class ProxyMiddleware implements NestMiddleware {
     this.circuitBreaker = new CircuitBreakerManager({
       failureThreshold: 5,
       successThreshold: 3,
-      timeout: 30000,
+      timeout: this.proxyConfig.uploadTimeout || 1800000, // Use upload timeout for circuit breaker
       failureWindow: 60000,
     });
 
+    // Use extended timeout for all requests (30 minutes) to support large video uploads
+    // Normal API requests will still complete quickly, but uploads won't timeout
+    const timeout = this.proxyConfig.uploadTimeout || 1800000; // 30 minutes
+
+    // Disable followRedirects to avoid maxBodyLength limit (10MB default)
+    // For large uploads, we don't want redirects anyway - direct connection is better
+    // Environment variable FOLLOW_REDIRECTS_MAX_BODY_LENGTH is set at top of file
     this.proxy = createProxyMiddleware({
       changeOrigin: true,
       xfwd: true,
       ws: false,
-      timeout: this.proxyConfig.timeout,
-      proxyTimeout: this.proxyConfig.proxyTimeout,
-      followRedirects: true,
+      timeout: timeout,
+      proxyTimeout: timeout,
+      followRedirects: false, // Disable to avoid maxBodyLength limit for large uploads
       autoRewrite: false,
       preserveHeaderKeyCase: true,
       secure: false,
@@ -150,6 +164,13 @@ export class ProxyMiddleware implements NestMiddleware {
           });
         },
         proxyReq: (proxyReq, req) => {
+          // Set extended timeout for upload routes
+          const isUpload = (req.path || req.url || '').includes('/upload');
+          if (isUpload) {
+            proxyReq.setTimeout(this.proxyConfig.uploadTimeout || 1800000);
+            this.logger.debug(`Extended timeout set for upload route: ${req.url}`);
+          }
+          
           proxyReq.setHeader('x-gateway', 'nestjs-gateway');
           proxyReq.setHeader(
             'x-forwarded-for',
@@ -233,6 +254,19 @@ export class ProxyMiddleware implements NestMiddleware {
   async use(req: Request, res: Response, next: NextFunction) {
     const fullUrl = req.originalUrl || req.url;
     (req as any)._startTime = Date.now();
+
+    // Set extended timeout for upload routes at request level
+    const isUpload = fullUrl.includes('/upload') || fullUrl.includes('/minio/upload');
+    if (isUpload) {
+      const uploadTimeout = this.proxyConfig.uploadTimeout || 1800000;
+      req.setTimeout(uploadTimeout, () => {
+        this.logger.warn(`Request timeout for upload: ${fullUrl}`);
+      });
+      res.setTimeout(uploadTimeout, () => {
+        this.logger.warn(`Response timeout for upload: ${fullUrl}`);
+      });
+      this.logger.debug(`Extended timeout set for upload route: ${fullUrl} (${uploadTimeout}ms)`);
+    }
 
     // Skip proxy for gateway internal routes
     if (
