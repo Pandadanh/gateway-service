@@ -41,6 +41,9 @@ services:
         path: /api/health
       - method: GET
         path: /api/realtime/rooms/*/messages
+      # Public streaming endpoint for media (no JWT required)
+      - method: GET
+        path: /media/api/minio/stream/*
     private:
       # Tất cả routes khác cần JWT
     websocket:
