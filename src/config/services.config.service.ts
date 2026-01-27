@@ -23,11 +23,8 @@ export class ServicesConfigService implements OnModuleInit {
     // Check if static services are enabled
     this.enabled = process.env.USE_STATIC_SERVICES === 'true';
 
-    if (!this.enabled) {
-      this.logger.log('Static services disabled - using service registry only');
-      return;
-    }
-
+    // Always load static services config for WebSocket fallback, even if USE_STATIC_SERVICES=false
+    // HTTP proxy will respect the flag, but WebSocket needs reliable fallback
     try {
       const possiblePaths = [
         process.env.SERVICES_CONFIG_PATH,
@@ -99,6 +96,14 @@ export class ServicesConfigService implements OnModuleInit {
     if (!this.enabled) {
       return null;
     }
+    return this.staticServices.get(serviceName) || null;
+  }
+
+  /**
+   * Get static service URL for WebSocket (always enabled, regardless of USE_STATIC_SERVICES flag)
+   * WebSocket connections need reliable fallback to hard-coded URLs
+   */
+  getStaticServiceForWebSocket(serviceName: string): string | null {
     return this.staticServices.get(serviceName) || null;
   }
 

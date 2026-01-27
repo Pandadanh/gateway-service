@@ -164,15 +164,21 @@ export class WebSocketProxyService implements OnModuleInit {
     // Priority 1: Service Registry
     const instance = this.registry.pickHealthy(serviceName);
     if (instance) {
+      this.logger.debug(`WebSocket: Using registry instance for ${serviceName}: ${instance.baseUrl}`);
       return instance.baseUrl;
     }
 
-    // Priority 2: Static fallback
-    const staticUrl = this.servicesConfig.getStaticService(serviceName);
+    // Priority 2: Static fallback (always enabled for WebSocket, regardless of USE_STATIC_SERVICES flag)
+    // This ensures WebSocket connections always have a fallback to hard-coded URLs
+    const staticUrl = this.servicesConfig.getStaticServiceForWebSocket(serviceName);
     if (staticUrl) {
+      this.logger.warn(
+        `WebSocket: Service "${serviceName}" not found in registry, using static fallback: ${staticUrl}`,
+      );
       return staticUrl;
     }
 
+    this.logger.error(`WebSocket: No target found for service "${serviceName}" (no registry instance and no static fallback)`);
     return null;
   }
 }
