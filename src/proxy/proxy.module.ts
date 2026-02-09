@@ -10,6 +10,7 @@ import { RoutesConfigService } from '../config/routes.config.service';
 import { ServicesConfigService } from '../config/services.config.service';
 import { GatewayConfig } from '../config/gateway.config';
 import { CircuitsController } from '../core/circuits.controller';
+import { XUserSessionMiddleware } from 'src/core/signature.middleware';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { CircuitsController } from '../core/circuits.controller';
   providers: [
     ProxyMiddleware,
     JwtMiddleware,
+    XUserSessionMiddleware,
     RoutesConfigService,
     ServicesConfigService,
     WebSocketProxyService,
@@ -58,18 +60,29 @@ export class ProxyModule implements NestModule {
       '/registry',
       '/circuits',
     ];
-
+    const xUserSessionRoutes = [
+      '/health',
+      '/metrics',
+      '/registry/*path',
+      '/circuits',
+    ];
     // Rate limiting (first) - skip internal routes
     consumer
       .apply(this.rateLimitMiddleware.use.bind(this.rateLimitMiddleware))
       .exclude(...internalRoutes)
       .forRoutes('*');
 
+    // // X-User-Session - public APIs, skip internal routes
+      consumer
+        .apply(XUserSessionMiddleware)
+        .exclude(...xUserSessionRoutes)
+        .forRoutes('*'); 
+
     // JWT authentication (second) - only if enabled, skip internal routes
     if (config?.jwt.enabled) {
       consumer
         .apply(JwtMiddleware)
-        .exclude(...internalRoutes)
+        // .exclude(...internalRoutes)
         .forRoutes('*');
     }
 
