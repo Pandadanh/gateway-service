@@ -3,13 +3,6 @@ import { SECURITY_CONTANTS, verifyHmacSignature } from "@smashclub/common/"
 import { Request, Response,NextFunction } from "express";
 import { RoutesConfigService } from "src/config/routes.config.service";
 
-function getServiceFromPath(path: string): string | null {
-  const cleanPath = path.split('?')[0];
-
-  const match = cleanPath.match(/^\/([^/]+)(\/.*)?$/);
-
-  return match?.[1] ?? null;
-}
 
 @Injectable()
 export class XUserSessionMiddleware implements NestMiddleware{
@@ -18,24 +11,8 @@ export class XUserSessionMiddleware implements NestMiddleware{
     ){}
 
     use(req: Request, res:Response, next: NextFunction){
-        const fullPath = req.originalUrl || req.url;
-        const method = req.method;
-        const service = getServiceFromPath(fullPath);
 
-        if (!service) return next();
-
-        const isPublic = this.routesConfigService.isPublicRoute(
-        service,
-        method,
-        fullPath,
-        );
-        if(!isPublic) return next();
-        console.log('[XUSER RAW URL]', {
-        originalUrl: req.originalUrl,
-        url: req.url,
-        path: req.path,
-        baseUrl: req.baseUrl,
-        });
+        
         const header = req.header(SECURITY_CONTANTS.X_USER_SESSION_HEADER);
 
         if(!header){
@@ -64,7 +41,9 @@ export class XUserSessionMiddleware implements NestMiddleware{
 
         const now =Date.now();
 
-        if(Math.abs(now-timestamp) > SECURITY_CONTANTS.MAX_CLOCK_SKEW_MS){
+        const timeCheck=Number(process.env.MAX_TIMESTAMP!);
+
+        if(Math.abs(now-timestamp) > timeCheck){
             throw new UnauthorizedException('X-UserSession expired');
         }
 
