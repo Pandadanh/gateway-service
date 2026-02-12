@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { ProxyMiddleware } from './proxy.middleware';
@@ -60,12 +60,7 @@ export class ProxyModule implements NestModule {
       '/registry',
       '/circuits',
     ];
-    const xUserSessionRoutes = [
-      '/health',
-      '/metrics',
-      '/registry/*path',
-      '/circuits',
-    ];
+   
     // Rate limiting (first) - skip internal routes
     consumer
       .apply(this.rateLimitMiddleware.use.bind(this.rateLimitMiddleware))
@@ -75,14 +70,20 @@ export class ProxyModule implements NestModule {
     // // X-User-Session - public APIs, skip internal routes
       consumer
         .apply(XUserSessionMiddleware)
-        .exclude(...xUserSessionRoutes)
+        .exclude(
+          '/health',
+          '/metrics',
+          '/circuits',
+          { path: 'registry/{*splat}', method: RequestMethod.ALL },
+         { path: '/registry/register', method: RequestMethod.POST },
+        )
         .forRoutes('*'); 
 
     // JWT authentication (second) - only if enabled, skip internal routes
     if (config?.jwt.enabled) {
       consumer
         .apply(JwtMiddleware)
-        // .exclude(...internalRoutes)
+        .exclude(...internalRoutes)
         .forRoutes('*');
     }
 

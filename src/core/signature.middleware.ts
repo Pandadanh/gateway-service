@@ -11,7 +11,6 @@ export class XUserSessionMiddleware implements NestMiddleware{
     ){}
 
     use(req: Request, res:Response, next: NextFunction){
-
         
         const header = req.header(SECURITY_CONTANTS.X_USER_SESSION_HEADER);
 
