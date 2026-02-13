@@ -58,23 +58,36 @@ export class JwtMiddleware implements NestMiddleware {
     }
 
     const token = authHeader.substring(7);
+     if (!this.jwtSecret || typeof this.jwtSecret !== 'string' || this.jwtSecret.trim() === '') {
+    throw new UnauthorizedException({
+      statusCode: 401,
+      message:'Authentication service is misconfigured',
+      error: 'Unauthorized',
+    })
+      
+    }
 
     try {
       // Verify JWT token
-      const decoded = jwt.verify(token, this.jwtSecret);
+      const decoded = jwt.verify(token, this.jwtSecret) as any;
       
       // Attach user info to request
       (req as any).user = decoded;
       
       next();
     } catch (error) {
+
+      let message = 'Invalid token';
       if (error.name === 'TokenExpiredError') {
-        throw new UnauthorizedException({
-          statusCode: 401,
-          message: 'Token expired',
-          error: 'Unauthorized',
-        });
+      message = 'Token has expired';
+      } else if (error.name === 'NotBeforeError') {
+        message = 'Token not yet valid';
+      } else if (error.message?.includes('secret') || error.message?.includes('key')) {
+        message = 'Authentication configuration error';
+        } else if (error.name === 'JsonWebTokenError') {
+        message = error.message === 'jwt malformed' ? 'Malformed token' : 'Invalid token';
       }
+
       throw new UnauthorizedException({
         statusCode: 401,
         message: 'Invalid token',
