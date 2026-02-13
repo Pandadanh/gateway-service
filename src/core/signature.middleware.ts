@@ -1,5 +1,5 @@
 import { Injectable, NestMiddleware, UnauthorizedException } from "@nestjs/common";
-import { SECURITY_CONTANTS, verifyHmacSignature } from "@smashclub/common/"
+import { SECURITY_CONTANTS, verifyHmacSignature } from "@smashclub/common"
 import { Request, Response,NextFunction } from "express";
 import { RoutesConfigService } from "src/config/routes.config.service";
 
