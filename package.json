@@ -5,7 +5,6 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
-  
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -27,6 +26,7 @@
     "@nestjs/jwt": "^11.0.0",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/schedule": "^6.1.0",
+    "@smashclub/common": "file:../smashclub-common/packages/@smashclub/common",
     "http-proxy": "^1.18.1",
     "http-proxy-middleware": "^3.0.5",
     "ioredis": "^5.4.1",
